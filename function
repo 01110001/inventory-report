@@ -1,0 +1,27 @@
+prepare <- function(dataset) {
+  require(dplyr)
+  
+  df_summary <- dataset %>%
+    group_by(Grade, Largeur, Location, Essence, num_paquet) %>%
+    summarise(Somme_PMP = sum(PMP, na.rm = TRUE), .groups = 'drop')
+  
+  df_by_grade <- df_summary %>%
+    group_by(Grade, Location, Essence) %>%
+    group_split()
+  
+  return(df_by_grade)
+}
+
+# adding a total row.
+for (i in seq_along(df_by_grade)) {
+  summary <- df_by_grade[[i]] %>% 
+    summarise(
+      Grade = "Total",
+      Largeur = "",
+      Location = "",
+      num_paquet = n_distinct(num_paquet),
+      Somme_PMP = sum(Somme_PMP)
+    )
+  
+  df_by_grade[[i]] <- bind_rows(df_by_grade[[i]], summary)
+}
