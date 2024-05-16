@@ -12,16 +12,91 @@ prepare <- function(dataset) {
   return(df_by_grade)
 }
 
-# adding a total row.
-for (i in seq_along(df_by_grade)) {
-  summary <- df_by_grade[[i]] %>% 
-    summarise(
-      Grade = "Total",
-      Largeur = "",
-      Location = "",
-      num_paquet = n_distinct(num_paquet),
-      Somme_PMP = sum(Somme_PMP)
-    )
-  
-  df_by_grade[[i]] <- bind_rows(df_by_grade[[i]], summary)
+add_row_sum <- function(list) {
+  require(dplyr)
+  for (i in seq_along(list)) {
+    summary <- list[[i]] %>% 
+      summarise(
+        Grade = "Total",
+        Largeur = "",
+        Location = "",
+        num_paquet = n_distinct(num_paquet),
+        Somme_PMP = sum(Somme_PMP)
+      )
+    
+     list[[i]] <- bind_rows(list[[i]], summary)
+  }
+  return(list)
 }
+
+x4 <- read_excel("C:/Users/Serge/Downloads/44 et 64.xlsx", 
+                 sheet = "4 qrt")
+x6 <- read_excel("C:/Users/Serge/Downloads/44 et 64.xlsx", 
+                 sheet = "6 qrt")
+
+
+
+x6_cleaned <- x6 %>% filter(num_paquet != "PAS NUMERO") %>% 
+  mutate(num_paquet = as.numeric(num_paquet))
+
+
+inventaire_4 <- prepare(x4)
+inventaire_6 <- prepare(x6_cleaned)
+
+
+inventaire_4_ready <- add_row_sum(inventaire_4)
+inventaire_6_ready <- add_row_sum(inventaire_6)
+
+
+#------printing---the----report-----------------------------------
+# Load necessary packages
+library(officer)
+
+# Create a new Word document
+doc <- read_docx()
+
+# Function to generate the table name
+generate_table_name <- function(table, bois) {
+  if (!all(c("Location", "Grade", "Essence") %in% colnames(table))) {
+    stop("Table does not contain required columns: Location, Grade, Essence")
+  }
+  location <- ifelse(!is.na(table$Location[1]), table$Location[1], "")
+  grade <- ifelse(!is.na(table$Grade[1]), table$Grade[1], "")
+  essence <- ifelse(!is.na(table$Essence[1]), table$Essence[1], "")
+  paste(bois, location, grade, essence, sep = " ")
+}
+
+# Function to add table with title to the document
+add_table_with_title <- function(doc, table, title) {
+  doc <- doc %>%
+    body_add_par(value = title, style = "heading 1") %>%
+    body_add_table(value = table, style = "table_template")
+  return(doc)
+}
+
+# Add tables from inventaire_4_ready with custom names
+for (i in seq_along(inventaire_4_ready)) {
+  table <- inventaire_4_ready[[i]]
+  table_name <- generate_table_name(table, "4/4")
+  print(paste("Adding table:", table_name)) # Debugging statement
+  doc <- add_table_with_title(doc, table, table_name)
+}
+
+# Add tables from inventaire_6_ready with custom names
+for (i in seq_along(inventaire_6_ready)) {
+  table <- inventaire_6_ready[[i]]
+  table_name <- generate_table_name(table, "6/4")
+  print(paste("Adding table:", table_name)) # Debugging statement
+  doc <- add_table_with_title(doc, table, table_name)
+}
+
+# Save the Word document
+print(doc, target = "inventory_tables.docx")
+
+
+# Filter the data and sum the PMP column
+bois_sec_6q <- x6_cleaned %>%
+  filter(Location == "SEC") %>%
+  summarise(total_PMP = sum(PMP, na.rm = TRUE))
+
+
