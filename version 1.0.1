@@ -1,0 +1,131 @@
+library(rmarkdown)
+
+main <- function() {
+  
+  #----DECLARING FUNCTION FOR DATA MANIPULATION----
+  prepare <- function(dataset) {
+    require(dplyr)
+    
+    df_summary <- dataset %>%
+      group_by(Grade, Largeur, Location, Essence, num_paquet,type) %>%
+      summarise(Somme_PMP = sum(PMP, na.rm = TRUE), .groups = 'drop')
+    
+    df_by_grade <- df_summary %>%
+      group_by(Grade, Location, Essence) %>%
+      group_split()
+    
+    return(df_by_grade)
+  }
+  
+  add_row_sum <- function(list) {
+    require(dplyr)
+    for (i in seq_along(list)) {
+      summary <- list[[i]] %>% 
+        summarise(
+          Grade = "Total",
+          Largeur = "",
+          Location = "",
+          num_paquet = n_distinct(num_paquet),
+          Somme_PMP = sum(Somme_PMP)
+        )
+      
+      list[[i]] <- bind_rows(list[[i]], summary)
+    }
+    return(list)
+  }
+  
+  #----READING THE DATASET----
+  library(readxl)
+  quatre_quart <- read_excel("")
+  
+  six_quart <- read_excel("")
+  
+  #----CLEANING THE DATA----
+  six_quart_cleaned <- six_quart %>% filter(num_paquet != "PAS NUMERO") %>% 
+    mutate(num_paquet = as.numeric(num_paquet))
+  
+  quatre_quart_cleaned <- quatre_quart
+  
+  #--------SEPARATING THE DATA INTO DIFFERENT GROUPS--------
+  sq_vert <- six_quart_cleaned %>% filter(Location == "VERT")
+  sq_sec <- six_quart_cleaned %>% filter(Location == "SEC")
+  sq_sechoir <- six_quart_cleaned %>%
+    filter(grepl("séchoir", Location, ignore.case = TRUE))
+  
+  qq_vert <- quatre_quart_cleaned %>% filter(Location == "VERT")
+  qq_sec <- quatre_quart_cleaned %>% filter(Location == "SEC")
+  qq_sechoir <- quatre_quart_cleaned %>% filter(grepl("séchoir", Location, ignore.case = TRUE))
+  
+  inventaire_vert <- c(prepare(sq_vert), prepare(qq_vert))
+  inventaire_sec <- c(prepare(sq_sec), prepare(qq_sec))
+  inventaire_sechoir <- c(prepare(sq_sechoir), prepare(qq_sechoir))
+  
+  #--------FINAL STEP ADDING THE SUM TO THE TABLE--------
+  inventaire_vert_ready <- add_row_sum(inventaire_vert)
+  inventaire_sec_ready <- add_row_sum(inventaire_sec)
+  inventaire_sechoir_ready <- add_row_sum(inventaire_sechoir)
+  
+  # Function to generate the table name
+  generate_table_name <- function(table) {
+    if (!all(c("Location", "Grade", "Essence","type") %in% colnames(table))) {
+      stop("Table does not contain required columns: Location, Grade, Essence")
+    }
+    location <- ifelse(!is.na(table$Location[1]), table$Location[1], "")
+    grade <- ifelse(!is.na(table$Grade[1]), table$Grade[1], "")
+    essence <- ifelse(!is.na(table$Essence[1]), table$Essence[1], "")
+    type <- ifelse(!is.na(table$type[1]), table$type[1], "")
+    
+    paste(type, location, grade, essence, sep = " ")
+  }
+  
+  # Create a list of data frames with their titles
+  create_table_list <- function(tables) {
+    table_list <- list()
+    for (table in tables) {
+      table_name <- generate_table_name(table)
+      table_list[[table_name]] <- table
+    }
+    return(table_list)
+  }
+  
+  table_list_sec <- create_table_list(inventaire_sec_ready)
+  table_list_vert <- create_table_list(inventaire_vert_ready)
+  table_list_sechoir <- create_table_list(inventaire_sechoir_ready)
+  
+  # Function to generate an RMarkdown document with tables
+  generate_rmd_document <- function(tables, output_file, location) {
+    # Determine the title based on location
+    location_title <- switch(location,
+                             SEC = "Rapport inventaire - SEC",
+                             VERT = "Rapport inventaire - VERT",
+                             Séchoir = "Rapport inventaire - Séchoir",
+                             "Rapport inventaire")
+    
+    rmd_content <- c("---",
+                     paste0("title: \"", location_title, "\""),
+                     "output: pdf_document",
+                     "---",
+                     "")
+    
+    for (title in names(tables)) {
+      rmd_content <- c(rmd_content,
+                       paste0("## ", title),
+                       "",
+                       "```{r, echo=FALSE}",
+                       paste0("knitr::kable(tables[['", title, "']], format = 'latex')"),
+                       "```",
+                       "")
+    }
+    
+    writeLines(rmd_content, con = "report.Rmd")
+    rmarkdown::render("report.Rmd", output_file = output_file)
+    file.remove("report.Rmd")
+  }
+  
+  # Corrected calls to generate_rmd_document
+  generate_rmd_document(table_list_sec, "", "SEC")
+  generate_rmd_document(table_list_vert, "", "VERT")
+  generate_rmd_document(table_list_sechoir, "", "Séchoir")
+}
+
+main()
